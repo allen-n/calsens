@@ -10,13 +10,61 @@ import matplotlib.pyplot as plt
 
 # Preprocessing / Filtering
 from scipy.ndimage import gaussian_filter1d
+from sklearn.preprocessing import normalize
 
 
 class OxData:
     def __init__(self, csv_path):
         self.path = csv_path
+        self.data = None
+
+    ### Creating data matrix ###
+    def get_data_matrix(self, **kwargs):
+        '''
+        @args:
+            path: kwargs:
+            'sigma': 1, 'smoothing': 'gaussian',
+                'plot': False, 'reparse': False,
+                'fft-size': 1024
+        @return:
+            X - np array of all processed and normalized data
+        '''
+        args = {'sigma': 1, 'smoothing': 'gaussian',
+                'plot': False, 'reparse': False,
+                'fft-size': 1024}
+
+        for key, value in kwargs.items():
+            if key in args:
+                args[key] = value
+        if self.data is not None and not args['reparse']:
+            return self.data
+
+        data_candidates = []
+        for fpath in glob.glob(self.path):
+            sp02, pulse, start_time = self.day_to_df(fpath)
+            # Preprocess for FFT
+            sp02_wave = self.preproc_df_fft(
+                sp02, smoothing=args['smoothing'], sigma=args['sigma'], plot=args['plot'])
+            pulse_wave = self.preproc_df_fft(
+                pulse, smoothing=args['smoothing'], sigma=args['sigma'], plot=args['plot'])
+            # Perform FFT
+            sp02_fft = self.gen_fft(sp02_wave, args['fft-size'])
+            pulse_fft = self.gen_fft(pulse_wave, args['fft-size'])
+
+            # Can separate magnitudes and angles as follows:
+            # sp02_mag, sp02_angle = sp02_fft[:,:sp02_fft.sp02_fft[1]//2], sp02_fft[:,sp02_fft.shape[1]//2:]
+            # pulse_mag, pulse_angle = pulse_fft[:,:pulse_fft.pulse_fft[1]//2], pulse_fft[:,pulse_fft.shape[1]//2:]
+
+            # Normalize results and combine to final data matrix
+            temp_data = np.concatenate((sp02_fft, pulse_fft), axis=1)
+            data_candidates.append(temp_data)
+
+        self.data = np.concatenate(data_candidates)
+        self.data = normalize(self.data)
+        return self.data
 
     ### Data Loading ###
+
     def day_to_df(self, path):
         '''
         @args:
@@ -109,8 +157,9 @@ class OxData:
         for key, value in kwargs.items():
             if key in args:
                 args[key] = value
-
+                
         result = np.zeros(np.max(df['DateTime'])+1)
+        ### TODO: fix this, DateTimes come in duplicate pairs
         result[df['DateTime']] = df['Data/Duration']
 
         if args['plot']:
@@ -120,7 +169,7 @@ class OxData:
             if args['smoothing'] == 'gaussian':
                 wave = gaussian_filter1d(wave, args['sigma'])
             else:
-                moving_avg(wave, args['sigma'])
+                self.moving_avg(wave, args['sigma'])
             plt.clf()
             plt.plot(np.arange(wave.shape[0]), result)
             plt.plot(np.arange(wave.shape[0]), wave, 'r')
@@ -130,10 +179,10 @@ class OxData:
         else:
             self.impute_wave(result)
             if args['smoothing'] == 'gaussian':
-                result = gaussian_filter1d(wave, args['sigma'])
+                result = gaussian_filter1d(result, args['sigma'])
             else:
-                moving_avg(result, args['sigma'])
-            return df
+                self.moving_avg(result, args['sigma'])
+            return result
 
     ### Generation of feature matrix from day-data ###
     # TODO: Turn this function into Gen-Features, fator FFT part out, use it to generate feature array X
@@ -157,7 +206,6 @@ class OxData:
             plots = set()
         wave_length = wave.shape[0]
         last_section = wave_length // kernel_size
-    #     result = []
         result = np.zeros((last_section, kernel_size))
         for interval in range(last_section):
             section = wave[interval*kernel_size:(interval+1)*kernel_size]
@@ -178,8 +226,10 @@ class OxData:
             imag = sp.imag[:tlen]
             magnitudes = np.sqrt((real)**2 + (imag)**2)
             angles = np.arctan2(imag, real)
-            row = np.concatenate((magnitudes, angles), axis=0)
-            result[interval] = row
+            # print("mag:{}, ang:{}".format(magnitudes.shape, angles.shape))
+            row = np.concatenate((magnitudes, angles))
+            # print("mag:{}, ang:{}, row:{}".format(magnitudes.shape, angles.shape, row.shape))
+            result[interval,:] = row
 
         return result
 
