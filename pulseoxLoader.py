@@ -18,6 +18,12 @@ class OxData:
         self.path = csv_path
         self.data = None
 
+    def data_file_list(self):
+        files = []
+        for fpath in sorted(glob.glob(self.path)):
+            files.append(os.path.split(fpath)[-1])
+        return files
+
     ### Creating data matrix ###
     def get_data_matrix(self, **kwargs):
         '''
@@ -25,13 +31,13 @@ class OxData:
             path: kwargs:
             'sigma': 1, 'smoothing': 'gaussian',
                 'plot': False, 'reparse': False,
-                'fft-size': 1024
+                'fft_size': 1024, 'hold-out':[]
         @return:
             X - np array of all processed and normalized data
         '''
         args = {'sigma': 1, 'smoothing': 'gaussian',
                 'plot': False, 'reparse': False,
-                'fft-size': 1024}
+                'fft_size': 1024, 'hold_out': []}
 
         for key, value in kwargs.items():
             if key in args:
@@ -39,30 +45,52 @@ class OxData:
         if self.data is not None and not args['reparse']:
             return self.data
 
+        hold_outs = set(args['hold_out'])
         data_candidates = []
-        for fpath in glob.glob(self.path):
-            sp02, pulse, start_time = self.day_to_df(fpath)
-            # Preprocess for FFT
-            sp02_wave = self.preproc_df_fft(
-                sp02, smoothing=args['smoothing'], sigma=args['sigma'], plot=args['plot'])
-            pulse_wave = self.preproc_df_fft(
-                pulse, smoothing=args['smoothing'], sigma=args['sigma'], plot=args['plot'])
-            # Perform FFT
-            sp02_fft = self.gen_fft(sp02_wave, args['fft-size'])
-            pulse_fft = self.gen_fft(pulse_wave, args['fft-size'])
 
-            # Can separate magnitudes and angles as follows:
-            # sp02_mag, sp02_angle = sp02_fft[:,:sp02_fft.sp02_fft[1]//2], sp02_fft[:,sp02_fft.shape[1]//2:]
-            # pulse_mag, pulse_angle = pulse_fft[:,:pulse_fft.pulse_fft[1]//2], pulse_fft[:,pulse_fft.shape[1]//2:]
-
-            # Normalize results and combine to final data matrix
-            temp_data = np.concatenate((sp02_fft, pulse_fft), axis=1)
+        for fpath in sorted(glob.glob(self.path)):
+            fname = os.path.split(fpath)[-1]
+            if fname in hold_outs:
+                continue  # don't add this to the training matrix
+            temp_data = self.csv_to_data(fpath, **kwargs)
             data_candidates.append(temp_data)
 
         self.data = np.concatenate(data_candidates)
         self.data = normalize(self.data)
         return self.data
 
+    def csv_to_data(self, fpath, **kwargs):
+        '''
+        convert the passed file path fpath to a data matrix X
+        '''
+        args = {'sigma': 1, 'smoothing': 'gaussian',
+                'plot': False, 'reparse': False,
+                'fft_size': 1024, 'normalize':False}
+
+        for key, value in kwargs.items():
+            if key in args:
+                args[key] = value
+
+        sp02, pulse, start_time = self.day_to_df(fpath)
+        # Preprocess for FFT
+        sp02_wave = self.preproc_df_fft(
+            sp02, smoothing=args['smoothing'], sigma=args['sigma'], plot=args['plot'])
+        pulse_wave = self.preproc_df_fft(
+            pulse, smoothing=args['smoothing'], sigma=args['sigma'], plot=args['plot'])
+        # Perform FFT
+        sp02_fft = self.gen_fft(sp02_wave, args['fft_size'])
+        pulse_fft = self.gen_fft(pulse_wave, args['fft_size'])
+
+        # Can separate magnitudes and angles as follows:
+        # sp02_mag, sp02_angle = sp02_fft[:,:sp02_fft.sp02_fft[1]//2], sp02_fft[:,sp02_fft.shape[1]//2:]
+        # pulse_mag, pulse_angle = pulse_fft[:,:pulse_fft.pulse_fft[1]//2], pulse_fft[:,pulse_fft.shape[1]//2:]
+
+        # Normalize results and combine to final data matrix
+        temp_data = np.concatenate((sp02_fft, pulse_fft), axis=1)
+        if args['normalize']:
+            temp_data = normalize(temp_data)
+
+        return temp_data
     ### Data Loading ###
 
     def day_to_df(self, path):
@@ -157,9 +185,9 @@ class OxData:
         for key, value in kwargs.items():
             if key in args:
                 args[key] = value
-                
+
         result = np.zeros(np.max(df['DateTime'])+1)
-        ### TODO: fix this, DateTimes come in duplicate pairs
+        # TODO: fix this, DateTimes come in duplicate pairs
         result[df['DateTime']] = df['Data/Duration']
 
         if args['plot']:
@@ -229,7 +257,7 @@ class OxData:
             # print("mag:{}, ang:{}".format(magnitudes.shape, angles.shape))
             row = np.concatenate((magnitudes, angles))
             # print("mag:{}, ang:{}, row:{}".format(magnitudes.shape, angles.shape, row.shape))
-            result[interval,:] = row
+            result[interval, :] = row
 
         return result
 
