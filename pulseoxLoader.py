@@ -14,13 +14,16 @@ from sklearn.preprocessing import normalize
 
 
 class OxData:
-    def __init__(self, csv_path):
+    def __init__(self, csv_path, label_path):
         self.path = csv_path
         self.data = None
+        self.label_path = label_path
 
     def data_file_list(self):
         files = []
         for fpath in sorted(glob.glob(self.path)):
+            if fpath == self.label_path:
+                continue
             files.append(os.path.split(fpath)[-1])
         return files
 
@@ -52,6 +55,8 @@ class OxData:
             fname = os.path.split(fpath)[-1]
             if fname in hold_outs:
                 continue  # don't add this to the training matrix
+            if fpath == self.label_path:
+                continue
             temp_data = self.csv_to_data(fpath, **kwargs)
             data_candidates.append(temp_data)
 
@@ -65,7 +70,7 @@ class OxData:
         '''
         args = {'sigma': 1, 'smoothing': 'gaussian',
                 'plot': False, 'reparse': False,
-                'fft_size': 1024, 'normalize':False}
+                'fft_size': 1024, 'normalize': False}
 
         for key, value in kwargs.items():
             if key in args:
@@ -91,6 +96,44 @@ class OxData:
             temp_data = normalize(temp_data)
 
         return temp_data
+
+    ### Label Generation ###
+    def labels_to_df(self, path, date):
+        '''
+        @args:
+            path: os.path object representing path to OSCAR csv file to parse
+            date: date string in MM/DD/YYYY format to select the date to draw data from
+        @return:
+            label_df: pandas dataframe containing the labels for a given days' meal
+        '''
+        df = pd.read_csv(path)
+        df = df[df['Date'] == date]
+        return df
+
+
+    def gen_ground_truth(self, label_df, pre=0, eat=1, post=2):
+        '''
+        @args:
+            label_df: pandas dataframe containing the labels for a given days' meal
+            optional pre, eat, post specify value for each state, default to 0, 1, 2 respectively
+        @return
+            labels: np array of size max(label_df['End_min']) containing values at 
+            each minute index indicating eating state, 0: pre-eating, 1: eating, 2: post-eating
+
+        '''
+        ate = False
+        labels = np.zeros(np.max(label_df['End_min']), dtype=int)
+        for index, row in label_df.iterrows():
+            state = row['Label']
+            if state == 'eating':
+                ate = True
+                labels[row['Start_min']:row['End_min']] = eat
+            elif state == 'break' and not ate:
+                labels[row['Start_min']:row['End_min']] = pre
+            else:
+                labels[row['Start_min']:row['End_min']] = post
+        return labels
+
     ### Data Loading ###
 
     def day_to_df(self, path):
