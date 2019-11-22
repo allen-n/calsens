@@ -243,7 +243,11 @@ class OxData:
                 self.moving_avg(wave, args['sigma'])
             plt.clf()
             plt.plot(np.arange(wave.shape[0]), result)
-            plt.plot(np.arange(wave.shape[0]), wave, 'r')
+            plt.plot(np.arange(wave.shape[0]), wave, 'r:')
+            plt.legend(["Raw Time Indexed", "Smoothed & Imputed"])
+            plt.xlabel("Time (ms)")
+            plt.ylabel(r"Magnitude (of $SpO_{2}$)")
+            plt.title(r"Time based indexing, Imputation, and Smoothing of $SpO_{2}$ Data")
             plt.xlim(20, 1000)
             plt.ylim(85, 105)
             return wave
@@ -312,12 +316,19 @@ class OxData:
         ts = np.arange(magnitudes.shape[0])[offset:]
         # Ignoring DC component which is very large
         plt.plot(ts, magnitudes[offset:])
-        plt.title("Magnitudes Squared")
+        plt.title("Magnitudes Squared vs Frequency")
+        plt.ylabel("Magnitude Squared")
+        sample_freq = 1000
+        bin_freq = sample_freq//magnitudes.shape[0] 
+        plt.xlabel("Frequency in multiples of {} Hz".format(bin_freq))
+
     #     plt.ylim(-100, 100)
         plt.show()
         plt.clf()
 
         plt.plot(ts, angles[offset:])
-        plt.title("Phase Angles")
+        plt.title("Phase Angles vs Frequency")
+        plt.ylabel("Phase Angle (Radians)")
+        plt.xlabel("Frequency in multiples of {} Hz".format(bin_freq))
         plt.show()
         plt.clf()
