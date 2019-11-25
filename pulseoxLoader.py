@@ -40,7 +40,7 @@ class OxData:
         '''
         args = {'sigma': 1, 'smoothing': 'gaussian',
                 'plot': False, 'reparse': False,
-                'fft_size': 1024, 'hold_out': []}
+                'fft_size': 1024, 'hold_out': [], 'sliding_fft':False}
 
         for key, value in kwargs.items():
             if key in args:
@@ -70,7 +70,7 @@ class OxData:
         '''
         args = {'sigma': 1, 'smoothing': 'gaussian',
                 'plot': False, 'reparse': False,
-                'fft_size': 1024, 'normalize': False}
+                'fft_size': 1024, 'normalize': False, 'sliding_fft':False}
 
         for key, value in kwargs.items():
             if key in args:
@@ -82,10 +82,14 @@ class OxData:
             sp02, smoothing=args['smoothing'], sigma=args['sigma'], plot=args['plot'])
         pulse_wave = self.preproc_df_fft(
             pulse, smoothing=args['smoothing'], sigma=args['sigma'], plot=args['plot'])
-        # Perform FFT
-        sp02_fft = self.gen_fft(sp02_wave, args['fft_size'])
-        pulse_fft = self.gen_fft(pulse_wave, args['fft_size'])
 
+        # Perform FFT, either sliding or jumping window
+        if args['sliding_fft']:
+            sp02_fft = self.gen_fft_sliding(sp02_wave, args['fft_size'])
+            pulse_fft = self.gen_fft_sliding(pulse_wave, args['fft_size'])
+        else:
+            sp02_fft = self.gen_fft(sp02_wave, args['fft_size'])
+            pulse_fft = self.gen_fft(pulse_wave, args['fft_size'])
         # Can separate magnitudes and angles as follows:
         # sp02_mag, sp02_angle = sp02_fft[:,:sp02_fft.sp02_fft[1]//2], sp02_fft[:,sp02_fft.shape[1]//2:]
         # pulse_mag, pulse_angle = pulse_fft[:,:pulse_fft.pulse_fft[1]//2], pulse_fft[:,pulse_fft.shape[1]//2:]
@@ -261,6 +265,36 @@ class OxData:
 
     ### Generation of feature matrix from day-data ###
     # TODO: Turn this function into Gen-Features, fator FFT part out, use it to generate feature array X
+    def gen_fft_sliding(self, wave, kernel_size):
+        """
+        Generate FFT with a sliding window, rather than a jumping window
+            @params:
+                * wave: numpy array (n,), containing the waveform to generate the FFT for
+                * kernel_size: int, between 1 and n, size of the FFT window that will slide over the wave, should be power of 2
+            @returns:
+                list (n-kernel_size, 2) containing, each row contains 2 np arrays of size 
+                (kernel_size) containing magnitude and phase angle respectively, i.e. [[magnitude, phaseangle],...]
+        """
+        wave_length = wave.shape[0]
+        last_section = wave_length - kernel_size
+        result = np.zeros((last_section, kernel_size))
+        for i in range(last_section):
+            section = wave[i:i+kernel_size]
+            sp = np.fft.fft(section)
+            t = np.arange(sp.shape[0])
+            tlen = len(t)//2
+            
+            # Extract magnitude and angle info
+            real = sp.real[:tlen]
+            imag = sp.imag[:tlen]
+            magnitudes = np.sqrt((real)**2 + (imag)**2)
+            angles = np.arctan2(imag, real)
+            # print("mag:{}, ang:{}".format(magnitudes.shape, angles.shape))
+            row = np.concatenate((magnitudes, angles))
+            # print("mag:{}, ang:{}, row:{}".format(magnitudes.shape, angles.shape, row.shape))
+            result[i, :] = row
+
+        return result
 
     def gen_fft(self, wave, kernel_size=256, isPlot=False, plots=None):
         '''
@@ -273,8 +307,7 @@ class OxData:
                 list (n//kernel_size, 2) containing, each row contains 2 np arrays of size 
                 (kernel_size) containing magnitude and phase angle respectively, i.e. [[magnitude, phaseangle],...]
         '''
-        # size = 128 # Size of FFT kernel
-        interval = 2  # section of waveform being processed
+
         if plots:
             plots = set(plots)
         else:
